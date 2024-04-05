@@ -1,0 +1,97 @@
+#include <WiFiNINA.h>
+#include <BH1750.h>
+#include <Wire.h>
+#include "secrets.h"
+
+// WiFi credentials
+char ssid[] = SECRET_SSID;   // your network SSID (name) 
+char pass[] = SECRET_PASS;   //your network password (password)
+
+// IFTTT configuration
+char HOST_NAME[] = "maker.ifttt.com";
+String PATH_NAME_SUNLIGHT_DETECTED = "/trigger/Sunlight_Detected/with/key/3TvEHq5RaGqxVxVzVkQoI"; // Change your EVENT-NAME and YOUR-KEY
+String PATH_NAME_SUNLIGHT_STOPPED = "/trigger/Sunlight_Stopped/with/key/3TvEHq5RaGqxVxVzVkQoI"; // Change your EVENT-NAME and YOUR-KEY
+
+// BH1750 configuration
+BH1750 GY30;
+const float sunlightThreshold = 4000.0; // Adjust this value according to your environment
+bool isSunlightDetected = false;
+
+WiFiClient client;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+
+  // Initialize BH1750 sensor
+  Wire.begin();
+  GY30.begin();
+  Serial.println(F("BH1750 Test begin"));
+
+  // Connect to WiFi
+  WiFi.begin(ssid, pass);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.println("WiFi connected");
+  
+  // Connect to server
+  if (client.connect(HOST_NAME, 80)) {
+    Serial.println("Connected to server");
+  }
+  else {
+    Serial.println("Connection failed");
+  }
+}
+
+void loop() {
+  // Read light level
+  float lux = GY30.readLightLevel();
+
+  // Check sunlight detection
+  if (lux >= sunlightThreshold && !isSunlightDetected) {
+    Serial.println("Sunlight detected");
+
+    // Send HTTP request to IFTTT for sunlight detected
+   
+    sendIFTTTRequest(PATH_NAME_SUNLIGHT_DETECTED);
+
+    isSunlightDetected = true;
+  } 
+  else if (lux < sunlightThreshold && isSunlightDetected) {
+    Serial.println("Sunlight stopped");
+
+    // Send HTTP request to IFTTT for sunlight stopped
+    sendIFTTTRequest(PATH_NAME_SUNLIGHT_STOPPED);
+    isSunlightDetected = false;
+
+    
+  }
+
+  // Delay for stability
+  delay(1000);
+}
+
+void sendIFTTTRequest(String path) {
+  // Send HTTP request to IFTTT
+  String request = "GET " + path + " HTTP/1.1\r\n" +
+                   "Host: " + String(HOST_NAME) + "\r\n" +
+                   "Connection: close\r\n\r\n";
+  client.print(request);
+  
+  // Wait for response
+  while (client.connected()) {
+    if (client.available()) {
+      char c = client.read();
+      Serial.print(c);
+    }
+  }
+
+  // Close client connection
+  client.stop();
+  Serial.println();
+  Serial.println("Disconnected");
+}
